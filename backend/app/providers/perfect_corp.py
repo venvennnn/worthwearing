@@ -1,35 +1,38 @@
 """Perfect Corp AI Clothes Virtual Try-On adapter.
 
-Official contract (YouCam Online Editor, cloth-v4):
+Official contract (YouCam Online Editor):
 
-  POST {PERFECT_CORP_BASE_URL}{PERFECT_CORP_TRYON_PATH}
-  Authorization: Bearer {PERFECT_CORP_API_KEY}
-  JSON body — insert documented fields here:
-    src_file_url or src_file_id   shopper / person image
-    ref_file_url or ref_file_id   garment / outfit reference
-    garment_category              upper | lower | full_body | etc.
+  1) File API — local assets are not public, so we upload bytes:
+     POST {BASE}/s2s/v2.0/file
+     { "files": [{ "content_type", "file_name", "file_size" }] }
+     then PUT the image to data.files[0].requests[0].url
 
-  Response: { "status": 200, "data": { "task_id": "..." } }
+  2) Create task:
+     POST {BASE}{PERFECT_CORP_TRYON_PATH}   default /s2s/v2.0/task/cloth-v4
+     Official JSON fields (insert here if the console contract changes):
+       src_file_id or src_file_url
+       ref_file_id or ref_file_url
+       garment_category   upper | lower | full_body
 
-  GET {PERFECT_CORP_BASE_URL}{PERFECT_CORP_STATUS_PATH}  with {task_id}
-  Success: data.task_status == "success" and data.results.url
-  Error:   data.task_status == "error" or HTTP 4xx/5xx
+  3) Poll:
+     GET {BASE}{PERFECT_CORP_STATUS_PATH}  with {task_id}
+     success: data.task_status == "success" and data.results.url
 
-All request mapping is isolated in this file. If Perfect Corp changes field
-names, update `_build_try_on_payload` and `_normalize_status` only.
-Secrets never leave the server.
+Secrets never leave the server. Do not log keys or image bytes.
 """
 
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import time
 import uuid
+from pathlib import Path
 from threading import Lock
 
 import httpx
 
-from app.config import Settings, get_settings
+from app.config import DATA_DIR, Settings, get_settings
 from app.logging_utils import log_event
 from app.models import ProviderMode, TryOnJob, TryOnRequest, TryOnStatus
 from app.providers.base import VirtualTryOnProvider
@@ -37,9 +40,11 @@ from app.store import get_candidate, load_demo
 
 _jobs: dict[str, TryOnJob] = {}
 _remote_ids: dict[str, str] = {}
+_file_ids: dict[str, str] = {}
 _lock = Lock()
 
 TRANSIENT_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
+FILE_API_PATH = "/s2s/v2.0/file"
 
 
 class PerfectCorpProvider(VirtualTryOnProvider):
@@ -56,21 +61,24 @@ class PerfectCorpProvider(VirtualTryOnProvider):
             "Accept": "application/json",
         }
 
-    def _build_try_on_payload(self, request: TryOnRequest) -> dict[str, str]:
-        demo = load_demo()
-        candidate = get_candidate(request.candidate_id)
-        shopper_url = demo.shopper.photo_url
-        if shopper_url.startswith("/"):
-            shopper_url = f"{self.settings.cors_origins[0]}{shopper_url}"
-        garment_url = candidate.image_url
-        if garment_url.startswith("/"):
-            garment_url = f"{self.settings.cors_origins[0]}{garment_url}"
-        # Official payload fields for cloth-v4. Swap in src_file_id / ref_file_id
-        # if the deployment uses the File API instead of public URLs.
+    def _asset_path(self, image_url: str) -> Path:
+        name = image_url.rsplit("/", 1)[-1]
+        candidates = [
+            DATA_DIR / "assets" / name,
+            DATA_DIR.parent.parent / "frontend" / "public" / "assets" / name,
+        ]
+        for path in candidates:
+            if path.is_file():
+                return path
+        raise FileNotFoundError(name)
+
+    def _task_payload(self, src_file_id: str, ref_file_id: str) -> dict[str, str]:
+        # Official cloth-v4 fields. Use src_file_url / ref_file_url only when
+        # the image is already hosted on a public URL Perfect Corp can fetch.
         return {
-            "src_file_url": shopper_url,
-            "ref_file_url": garment_url,
-            "garment_category": "upper",
+            "src_file_id": src_file_id,
+            "ref_file_id": ref_file_id,
+            "garment_category": "outer",
         }
 
     def _normalize_create(self, body: dict) -> str:
@@ -79,6 +87,19 @@ class PerfectCorpProvider(VirtualTryOnProvider):
         if not task_id:
             raise ValueError("missing_task_id")
         return str(task_id)
+
+    def _provider_error_message(self, response: httpx.Response) -> str:
+        try:
+            body = response.json()
+        except Exception:
+            return "Live try-on could not be started."
+        code = body.get("error_code") or body.get("error")
+        data = body.get("data") if isinstance(body.get("data"), dict) else {}
+        nested = data.get("error") or data.get("error_code")
+        detail = nested or code
+        if detail:
+            return f"Perfect Corp error: {detail}"
+        return "Live try-on could not be started."
 
     def _normalize_status(self, body: dict, job: TryOnJob) -> TryOnJob:
         data = body.get("data") if isinstance(body.get("data"), dict) else body
@@ -144,6 +165,72 @@ class PerfectCorpProvider(VirtualTryOnProvider):
             raise last_error
         raise RuntimeError("retry_exhausted")
 
+    async def _upload_asset(self, client: httpx.AsyncClient, image_url: str) -> str:
+        path = self._asset_path(image_url)
+        cache_key = str(path.resolve())
+        with _lock:
+            cached = _file_ids.get(cache_key)
+        if cached:
+            return cached
+
+        data = path.read_bytes()
+        content_type = mimetypes.guess_type(path.name)[0] or "image/png"
+        reserve_url = self.settings.perfect_corp_base_url.rstrip("/") + FILE_API_PATH
+        reserve = await self._request_with_retry(
+            client,
+            "POST",
+            reserve_url,
+            headers=self._headers(),
+            json={
+                "files": [
+                    {
+                        "content_type": content_type,
+                        "file_name": path.name,
+                        "file_size": len(data),
+                    }
+                ]
+            },
+        )
+        if reserve.status_code >= 400:
+            raise RuntimeError(f"file_reserve_{reserve.status_code}")
+        body = reserve.json()
+        files = (body.get("data") or {}).get("files") or []
+        if not files:
+            raise RuntimeError("file_reserve_empty")
+        file_id = files[0].get("file_id")
+        requests = files[0].get("requests") or []
+        if not file_id or not requests:
+            raise RuntimeError("file_reserve_malformed")
+        upload = requests[0]
+        put_headers = {
+            key: str(value)
+            for key, value in (upload.get("headers") or {}).items()
+            if str(key).lower() not in {"authorization"}
+        }
+        put_headers.setdefault("Content-Type", content_type)
+        put_headers["Content-Length"] = str(len(data))
+        put_response = await self._request_with_retry(
+            client,
+            upload.get("method") or "PUT",
+            upload["url"],
+            headers=put_headers,
+            content=data,
+        )
+        if put_response.status_code >= 400:
+            raise RuntimeError(f"file_upload_{put_response.status_code}")
+        with _lock:
+            _file_ids[cache_key] = str(file_id)
+        return str(file_id)
+
+    async def _build_try_on_payload(
+        self, client: httpx.AsyncClient, request: TryOnRequest
+    ) -> dict[str, str]:
+        demo = load_demo()
+        candidate = get_candidate(request.candidate_id)
+        src_id = await self._upload_asset(client, demo.shopper.photo_url)
+        ref_id = await self._upload_asset(client, candidate.image_url)
+        return self._task_payload(src_id, ref_id)
+
     async def create_try_on(self, request: TryOnRequest, request_id: str) -> TryOnJob:
         started = time.perf_counter()
         candidate = get_candidate(request.candidate_id)
@@ -162,12 +249,13 @@ class PerfectCorpProvider(VirtualTryOnProvider):
         try:
             timeout = httpx.Timeout(self.settings.request_timeout_seconds)
             async with httpx.AsyncClient(timeout=timeout) as client:
+                payload = await self._build_try_on_payload(client, request)
                 response = await self._request_with_retry(
                     client,
                     "POST",
                     url,
                     headers=self._headers(),
-                    json=self._build_try_on_payload(request),
+                    json=payload,
                 )
             if response.status_code >= 400:
                 category = "auth" if response.status_code in {401, 403} else "http_error"
@@ -175,7 +263,7 @@ class PerfectCorpProvider(VirtualTryOnProvider):
                     update={
                         "status": TryOnStatus.FAILED,
                         "error_category": category,
-                        "error_message": "Live try-on could not be started.",
+                        "error_message": self._provider_error_message(response),
                     }
                 )
             else:
@@ -190,12 +278,12 @@ class PerfectCorpProvider(VirtualTryOnProvider):
                     "error_message": "Live try-on timed out.",
                 }
             )
-        except Exception:
+        except Exception as exc:
             job = job.model_copy(
                 update={
                     "status": TryOnStatus.FAILED,
                     "error_category": "network",
-                    "error_message": "Live try-on is unavailable.",
+                    "error_message": f"Live try-on is unavailable ({type(exc).__name__}).",
                 }
             )
         with _lock:
@@ -233,9 +321,11 @@ class PerfectCorpProvider(VirtualTryOnProvider):
                     "error_message": "Live job has no provider task id.",
                 }
             )
-        path = self.settings.perfect_corp_status_path.replace("{task_id}", remote_id)
-        if "{task_id}" not in self.settings.perfect_corp_status_path:
-            path = self.settings.perfect_corp_status_path.rstrip("/") + f"/{remote_id}"
+        path = self.settings.perfect_corp_status_path
+        if "{task_id}" in path:
+            path = path.replace("{task_id}", remote_id)
+        else:
+            path = path.rstrip("/") + f"/{remote_id}"
         url = self.settings.perfect_corp_base_url.rstrip("/") + path
         try:
             timeout = httpx.Timeout(self.settings.request_timeout_seconds)
@@ -248,7 +338,7 @@ class PerfectCorpProvider(VirtualTryOnProvider):
                     update={
                         "status": TryOnStatus.FAILED,
                         "error_category": "http_error",
-                        "error_message": "Could not read live try-on status.",
+                        "error_message": self._provider_error_message(response),
                     }
                 )
             else:

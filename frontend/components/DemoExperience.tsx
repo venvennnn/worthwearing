@@ -28,7 +28,7 @@ import type {
   TryOnJob,
 } from "@/lib/types";
 
-const LIVE_TIMEOUT_MS = 20_000;
+const LIVE_TIMEOUT_MS = 45_000;
 
 type Props = {
   demo: DemoPayload;

@@ -85,7 +85,7 @@ npm run dev
 
 Open http://localhost:3000 then `/demo`.
 
-To use live Perfect Corp try-on, set `DEMO_MODE=false` and `PERFECT_CORP_API_KEY`. Keep the key out of client code. If the live call fails or exceeds twenty seconds, use the prepared demo result instead of assuming success.
+Live try-on is on when `DEMO_MODE=false` and `PERFECT_CORP_API_KEY` is set in the **server** `.env` (never in the browser or git). The adapter uploads the shopper and garment through Perfect Corp’s File API, then starts a cloth-v4 task. If the live call fails or exceeds 45 seconds, the UI offers **Use prepared demo result** instead of silently swapping it in.
 
 ## Tests
 
