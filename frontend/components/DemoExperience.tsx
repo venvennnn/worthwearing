@@ -98,14 +98,34 @@ export function DemoExperience({ demo }: Props) {
       ]);
       setAnalyses((current) => ({ ...current, [candidate.id]: analysisResult }));
       setJobs((current) => ({ ...current, [candidate.id]: tryOnJob }));
+      if (tryOnJob.status === "failed") {
+        setTimedOut(tryOnJob.error_category === "timeout");
+        setStep(3);
+        return;
+      }
       const finished = await pollTryOn(tryOnJob.job_id, startedAt);
       setJobs((current) => ({ ...current, [candidate.id]: finished }));
       if (finished.provider === "demo") {
         setPrepared((current) => ({ ...current, [candidate.id]: true }));
       }
+      if (finished.status === "failed") {
+        setTimedOut(finished.error_category === "timeout");
+      }
       setStep(3);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed.");
+      setJobs((current) => ({
+        ...current,
+        [candidate.id]: {
+          job_id: current[candidate.id]?.job_id ?? `failed-${candidate.id}`,
+          status: "failed",
+          provider: "live",
+          prepared_fallback_available: true,
+          prepared_fallback_url: candidate.prepared_try_on_url,
+          error_category: "network",
+          error_message: "Live try-on is unavailable.",
+        },
+      }));
     } finally {
       setBusy(false);
     }
@@ -113,9 +133,28 @@ export function DemoExperience({ demo }: Props) {
 
   async function applyPrepared() {
     const currentJob = jobs[candidate.id];
-    if (!currentJob) return;
-    const fallback = await usePreparedFallback(currentJob.job_id);
-    setJobs((current) => ({ ...current, [candidate.id]: fallback }));
+    try {
+      if (currentJob?.job_id && !currentJob.job_id.startsWith("failed-")) {
+        const fallback = await usePreparedFallback(currentJob.job_id);
+        setJobs((current) => ({ ...current, [candidate.id]: fallback }));
+        setPrepared((current) => ({ ...current, [candidate.id]: true }));
+        setTimedOut(false);
+        return;
+      }
+    } catch {
+      // Fall through to the labeled local asset.
+    }
+    setJobs((current) => ({
+      ...current,
+      [candidate.id]: {
+        job_id: currentJob?.job_id ?? `demo-${candidate.id}`,
+        status: "completed",
+        provider: "demo",
+        result_image_url: candidate.prepared_try_on_url,
+        prepared_fallback_available: true,
+        prepared_fallback_url: candidate.prepared_try_on_url,
+      },
+    }));
     setPrepared((current) => ({ ...current, [candidate.id]: true }));
     setTimedOut(false);
   }

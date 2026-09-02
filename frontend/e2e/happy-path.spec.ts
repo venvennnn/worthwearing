@@ -30,8 +30,45 @@ test("happy path: Jacket A skip, Jacket B worth it, methodology, fallback contro
     "We don’t help shoppers buy more"
   );
 
-  await page.route("**/api/try-on", async (route) => {
-    if (route.request().method() === "POST") {
+  await page.route(/\/api\/try-on/, async (route) => {
+    const method = route.request().method();
+    const url = route.request().url();
+    if (method === "OPTIONS") {
+      await route.continue();
+      return;
+    }
+    if (method === "POST" && url.includes("fallback")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          job_id: "live-timeout",
+          status: "completed",
+          provider: "demo",
+          result_image_url: "/assets/jacket-b-tryon.png",
+          prepared_fallback_available: true,
+          prepared_fallback_url: "/assets/jacket-b-tryon.png",
+        }),
+      });
+      return;
+    }
+    if (method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          job_id: "live-timeout",
+          status: "failed",
+          provider: "live",
+          prepared_fallback_available: true,
+          prepared_fallback_url: "/assets/jacket-b-tryon.png",
+          error_category: "timeout",
+          error_message: "Live try-on timed out.",
+        }),
+      });
+      return;
+    }
+    if (method === "GET") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -48,20 +85,6 @@ test("happy path: Jacket A skip, Jacket B worth it, methodology, fallback contro
       return;
     }
     await route.continue();
-  });
-  await page.route("**/api/try-on/*/fallback", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        job_id: "live-timeout",
-        status: "completed",
-        provider: "demo",
-        result_image_url: "/assets/jacket-b-tryon.png",
-        prepared_fallback_available: true,
-        prepared_fallback_url: "/assets/jacket-b-tryon.png",
-      }),
-    });
   });
 
   await page.getByTestId("try-with-wardrobe").click();
