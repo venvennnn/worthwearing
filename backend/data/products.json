@@ -1,0 +1,64 @@
+[
+  {
+    "id": "jacket-a",
+    "name": "Noir Moto Jacket",
+    "short_label": "Jacket A",
+    "demo_role": "duplicative",
+    "category": "outerwear",
+    "subcategory": "leather_jacket",
+    "colors": ["black"],
+    "style_tags": ["edgy", "biker", "statement"],
+    "season_tags": ["fall", "winter"],
+    "occasion_tags": ["weekend"],
+    "layer": "outer",
+    "image_url": "/assets/jacket-a-product.png",
+    "price": 348,
+    "brand": "Atelier North",
+    "description": "A fashionable black leather moto. Looks current; duplicates a biker already in the closet.",
+    "prepared_try_on_url": "/assets/jacket-a-tryon.png",
+    "prepared_try_on_alt": "Prepared demo try-on of Maya wearing the Noir Moto Jacket over a white tee and indigo jeans.",
+    "scenario_assets": []
+  },
+  {
+    "id": "jacket-b",
+    "name": "Harbor Field Jacket",
+    "short_label": "Jacket B",
+    "demo_role": "versatile",
+    "category": "outerwear",
+    "subcategory": "field_jacket",
+    "colors": ["navy"],
+    "style_tags": ["classic", "workwear", "versatile"],
+    "season_tags": ["fall", "winter", "spring"],
+    "occasion_tags": ["work", "weekend", "commute"],
+    "layer": "outer",
+    "image_url": "/assets/jacket-b-product.png",
+    "price": 268,
+    "brand": "Harbor Cloth",
+    "description": "A navy field jacket that layers over work and weekend pieces already in the closet.",
+    "prepared_try_on_url": "/assets/jacket-b-tryon.png",
+    "prepared_try_on_alt": "Prepared demo try-on of Maya wearing the Harbor Field Jacket over a white tee and indigo jeans.",
+    "scenario_assets": [
+      {
+        "id": "jacket-b-office",
+        "label": "Office",
+        "context": "office",
+        "image_url": "/assets/scenario-office.png",
+        "alt": "Prepared office scenario: navy field jacket with tailored trousers in a bright lobby."
+      },
+      {
+        "id": "jacket-b-weekend",
+        "label": "Weekend",
+        "context": "weekend",
+        "image_url": "/assets/scenario-weekend.png",
+        "alt": "Prepared weekend scenario: navy field jacket with olive chinos outdoors."
+      },
+      {
+        "id": "jacket-b-rain",
+        "label": "Rainy commute",
+        "context": "rainy-commute",
+        "image_url": "/assets/scenario-rain.png",
+        "alt": "Prepared rainy-commute scenario: navy field jacket on a wet city street."
+      }
+    ]
+  }
+]
