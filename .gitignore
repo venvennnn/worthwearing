@@ -1,0 +1,15 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+node_modules/
+.next/
+playwright-report/
+test-results/
+blob-report/
+frontend/test-results/
+frontend/playwright-report/
+*.log
+.DS_Store

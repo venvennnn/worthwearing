@@ -1,0 +1,20 @@
+{
+  "shopper": {
+    "id": "shopper-maya",
+    "name": "Maya Chen",
+    "photo_url": "/assets/shopper-portrait.png",
+    "photo_alt": "Maya Chen standing in a white studio wearing a white t-shirt, dark jeans, and white sneakers.",
+    "climate_tags": ["fall", "winter", "spring"],
+    "target_occasions": ["work", "weekend", "commute", "evening"],
+    "city": "Portland, OR",
+    "notes": "Temperate, rainy-shoulder-season climate. Curated twelve-item closet for the hackathon demo."
+  },
+  "config": {
+    "wear_horizon_months": 12,
+    "live_timeout_seconds": 20,
+    "target_occasions": ["work", "weekend", "commute", "evening"]
+  },
+  "tagline": "Try it on. Know if it’s worth owning.",
+  "pitch": "WorthWearing combines Perfect Corp’s virtual try-on technology with wardrobe intelligence to determine whether a new garment complements what you already own—or is likely to become your next return.",
+  "close_line": "We don’t help shoppers buy more. We help them keep what they buy."
+}
