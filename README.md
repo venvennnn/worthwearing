@@ -87,6 +87,23 @@ Open http://localhost:3000 then `/demo`.
 
 Live try-on is on when `DEMO_MODE=false` and `PERFECT_CORP_API_KEY` is set in the **server** `.env` (never in the browser or git). The adapter uploads the shopper and garment through Perfect Corp’s File API, then starts a cloth-v4 task. If the live call fails or exceeds 45 seconds, the UI offers **Use prepared demo result** instead of silently swapping it in.
 
+## Deploy (Render + Vercel)
+
+Render’s default Python is 3.14, which cannot install our pinned `pydantic` wheels. The backend must run **Python 3.12**.
+
+In the Render service → Environment, set:
+
+```
+PYTHON_VERSION=3.12.11
+DEMO_MODE=false
+PERFECT_CORP_API_KEY=<server secret>
+FRONTEND_ORIGIN=https://YOUR-VERCEL-APP.vercel.app
+```
+
+Root directory: `backend`. Build: `pip install -r requirements.txt`. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+
+If GitHub access is denied, grant Render the repo in GitHub → Settings → Applications → Render, or make the repo public.
+
 ## Tests
 
 ```bash
