@@ -250,65 +250,83 @@ analysis = st.session_state.analyses.get(candidate.id)
 using_prepared = st.session_state.using_prepared.get(candidate.id, False)
 
 with visual:
-    st.markdown('<p class="eyebrow">Perfect Corp try-on</p>', unsafe_allow_html=True)
-    stage_url = demo.shopper.photo_url
-    stage_caption = demo.shopper.photo_alt
-    if job and job.result_image_url:
-        stage_url = job.result_image_url
-        if candidate.demo_role == "custom" and (
-            using_prepared or (job.provider == ProviderMode.DEMO)
-        ):
-            stage_caption = f"Uploaded photo of {candidate.name} (live try-on unavailable)"
-        else:
-            stage_caption = f"Try-on of {candidate.name} on {demo.shopper.name}"
-    if using_prepared or (job and job.provider == ProviderMode.DEMO and job.result_image_url):
-        if candidate.demo_role == "custom":
-            st.caption("Garment photo · live try-on unavailable")
-        else:
-            st.caption("Prepared demo")
-    elif job and job.provider == ProviderMode.LIVE and job.status == TryOnStatus.COMPLETED:
-        st.caption("Live API")
-    st.image(image_source(stage_url), caption=stage_caption, use_container_width=True)
-
-    if job and job.status in {TryOnStatus.FAILED, TryOnStatus.QUEUED, TryOnStatus.PROCESSING}:
-        if job.error_message or job.error_category == "timeout":
-            st.warning(job.error_message or "Live try-on did not finish.")
-            if st.button("Use prepared demo result", key="fallback"):
-                extra_c, extra_p = extras()
-                st.session_state.jobs[candidate.id] = prepared_result(
-                    candidate.id, extra_closet=extra_c, extra_candidates=extra_p
-                )
-                st.session_state.using_prepared[candidate.id] = True
-                st.rerun()
-
-    if candidate.scenario_assets:
-        st.markdown('<p class="eyebrow">Occasion scenarios</p>', unsafe_allow_html=True)
-        scenario_cols = st.columns(len(candidate.scenario_assets))
-        for column, scenario in zip(scenario_cols, candidate.scenario_assets):
-            with column:
-                st.image(image_source(scenario.image_url), caption=scenario.label, use_container_width=True)
-
-    st.markdown('<p class="eyebrow">Demo jackets</p>', unsafe_allow_html=True)
-    render_picker(demo.candidates, candidate.id)
-
-    if extra_candidates:
-        st.markdown('<p class="eyebrow">Your garments</p>', unsafe_allow_html=True)
-        render_picker(extra_candidates, candidate.id)
-
-    if st.button("Try it with my wardrobe", type="primary", use_container_width=True):
-        run_pipeline(candidate.id)
-        st.rerun()
-
     if st.session_state.error:
         st.error(st.session_state.error)
     if st.session_state.form_notice:
         st.success(st.session_state.form_notice)
         st.session_state.form_notice = None
 
-    with st.expander("Add to your wardrobe"):
+    st.radio(
+        "What do you want to do?",
+        ["Demo jackets", "Add to wardrobe", "Try a shirt"],
+        horizontal=True,
+        key="main_view",
+    )
+    view = st.session_state.main_view
+
+    if view == "Demo jackets":
+        st.markdown('<p class="eyebrow">Perfect Corp try-on</p>', unsafe_allow_html=True)
+        stage_url = demo.shopper.photo_url
+        stage_caption = demo.shopper.photo_alt
+        if job and job.result_image_url:
+            stage_url = job.result_image_url
+            if candidate.demo_role == "custom" and (
+                using_prepared or (job.provider == ProviderMode.DEMO)
+            ):
+                stage_caption = f"Uploaded photo of {candidate.name} (live try-on unavailable)"
+            else:
+                stage_caption = f"Try-on of {candidate.name} on {demo.shopper.name}"
+        if using_prepared or (job and job.provider == ProviderMode.DEMO and job.result_image_url):
+            if candidate.demo_role == "custom":
+                st.caption("Garment photo · live try-on unavailable")
+            else:
+                st.caption("Prepared demo")
+        elif job and job.provider == ProviderMode.LIVE and job.status == TryOnStatus.COMPLETED:
+            st.caption("Live API")
+        st.image(image_source(stage_url), caption=stage_caption, use_container_width=True)
+
+        if job and job.status in {TryOnStatus.FAILED, TryOnStatus.QUEUED, TryOnStatus.PROCESSING}:
+            if job.error_message or job.error_category == "timeout":
+                st.warning(job.error_message or "Live try-on did not finish.")
+                if st.button("Use prepared demo result", key="fallback"):
+                    extra_c, extra_p = extras()
+                    st.session_state.jobs[candidate.id] = prepared_result(
+                        candidate.id, extra_closet=extra_c, extra_candidates=extra_p
+                    )
+                    st.session_state.using_prepared[candidate.id] = True
+                    st.rerun()
+
+        if candidate.scenario_assets:
+            st.markdown('<p class="eyebrow">Occasion scenarios</p>', unsafe_allow_html=True)
+            scenario_cols = st.columns(len(candidate.scenario_assets))
+            for column, scenario in zip(scenario_cols, candidate.scenario_assets):
+                with column:
+                    st.image(image_source(scenario.image_url), caption=scenario.label, use_container_width=True)
+
+        st.caption("Seed jackets for the two-minute demo. Add your own pieces with Add to wardrobe or Try a shirt.")
+        render_picker(demo.candidates, candidate.id)
+        if extra_candidates:
+            st.markdown('<p class="eyebrow">Your garments</p>', unsafe_allow_html=True)
+            render_picker(extra_candidates, candidate.id)
+        if st.button("Try it with my wardrobe", type="primary", use_container_width=True):
+            run_pipeline(candidate.id)
+            st.rerun()
+        closet_items = [*demo.closet, *extra_closet]
+        with st.expander(f"{demo.shopper.name}’s closet · {len(closet_items)} items", expanded=True):
+            closet_cols = st.columns(6)
+            for index, item in enumerate(closet_items):
+                with closet_cols[index % 6]:
+                    suffix = " · yours" if item.id.startswith("user-") else ""
+                    st.image(
+                        image_source(item.image_url),
+                        caption=f"{item.name}{suffix}",
+                        use_container_width=True,
+                    )
+
+    elif view == "Add to wardrobe":
         st.caption(
-            "Uploads stay in this browser session. They change Maya’s closet for scoring "
-            "on this visit only — they are not written to the shared demo catalog."
+            "Upload a photo of something you already own. It joins Maya’s closet for this "
+            "browser session only and is included the next time you score a garment."
         )
         with st.form("add-closet"):
             photo, name, kind, colors, styles, seasons, occasions, price = garment_form_fields(
@@ -335,6 +353,7 @@ with visual:
                     )
                     st.session_state.extra_closet.append(item.model_dump(mode="json"))
                     clear_analyses()
+                    st.session_state.main_view = "Add to wardrobe"
                     st.session_state.form_notice = f"Added {item.name} to the wardrobe."
                     st.rerun()
                 except Exception as exc:
@@ -351,10 +370,16 @@ with visual:
                     clear_analyses()
                     st.rerun()
 
-    with st.expander("Try a shirt or other garment"):
+    elif view == "Try a shirt":
+        if job and job.result_image_url and candidate.demo_role == "custom":
+            st.image(
+                image_source(job.result_image_url),
+                caption=f"{candidate.name} against the current wardrobe",
+                use_container_width=True,
+            )
         st.caption(
-            "Upload any shirt, sweater, jacket, or bottom you already own. "
-            "WorthWearing scores it against the current wardrobe and runs try-on when live."
+            "Upload any shirt, sweater, jacket, or bottom. WorthWearing scores it against "
+            "the current wardrobe and runs try-on when the live API is on."
         )
         with st.form("try-garment"):
             photo, name, kind, colors, styles, seasons, occasions, price = garment_form_fields(
@@ -381,6 +406,7 @@ with visual:
                     )
                     st.session_state.extra_candidates.append(item.model_dump(mode="json"))
                     select_garment(item.id)
+                    st.session_state.main_view = "Try a shirt"
                     run_pipeline(item.id)
                     st.session_state.form_notice = f"Scored {item.name} against the wardrobe."
                     st.rerun()
@@ -400,17 +426,6 @@ with visual:
                     if st.session_state.selected_id == item.id:
                         st.session_state.selected_id = "jacket-a"
                     st.rerun()
-
-    closet_items = [*demo.closet, *extra_closet]
-    st.markdown(
-        f'<p class="eyebrow">{demo.shopper.name}’s closet · {len(closet_items)} items</p>',
-        unsafe_allow_html=True,
-    )
-    closet_cols = st.columns(6)
-    for index, item in enumerate(closet_items):
-        with closet_cols[index % 6]:
-            suffix = " · yours" if item.id.startswith("user-") else ""
-            st.image(image_source(item.image_url), caption=f"{item.name}{suffix}", use_container_width=True)
 
 with analytics:
     if analysis:
@@ -484,7 +499,7 @@ with analytics:
     else:
         st.subheader("Wardrobe intelligence")
         st.write(
-            "Select a jacket, add something to the wardrobe, or upload a shirt you already own. "
+            "Use Add to wardrobe or Try a shirt above the jackets. "
             "Recommendations are deterministic. This is a decision-support prototype, not a proven return model."
         )
 

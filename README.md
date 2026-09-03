@@ -107,6 +107,6 @@ cd backend && python3 -m pytest
 4. Expand **Why this result?** and check that factor points sum to Return Risk.
 5. Select Jacket B (Harbor Field). Run again. Confirm Worth It, ≥4 outfits, before-and-after, and office / weekend / rainy-commute images.
 6. If live try-on fails, **Use prepared demo result** is explicit — never a silent swap.
-7. Expand **Add to your wardrobe**, upload a photo, and confirm it appears in Maya’s closet labeled *yours*. Re-run Jacket A or B so scoring includes the extra piece.
-8. Expand **Try a shirt or other garment**, upload a shirt, and confirm a Worth It / Think Again / Skip It result against the closet. A second white oxford should score as duplicative.
+7. Choose **Add to wardrobe**, upload a photo, and confirm it appears in Maya’s closet labeled *yours*. Re-run Jacket A or B so scoring includes the extra piece.
+8. Choose **Try a shirt**, upload a shirt, and confirm a Worth It / Think Again / Skip It result against the closet. A second white oxford should show high duplication.
 9. Close on: we don’t help shoppers buy more. We help them keep what they buy.
