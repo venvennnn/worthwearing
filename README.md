@@ -23,26 +23,52 @@ Close: *We don’t help shoppers buy more. We help them keep what they buy.*
 
 ## Architecture
 
+The judges demo is a **single Streamlit app**. Scoring and Perfect Corp live in Python — no Node, Vercel, or CORS.
+
 ```
-/frontend   Next.js 15 + TypeScript + Tailwind + Recharts
-/backend    FastAPI + Python 3.12 + Pydantic + httpx
-/backend/data/closet.json     twelve-item curated closet
-/backend/data/products.json   Jacket A (duplicative) and Jacket B (versatile)
+streamlit_app.py              Streamlit UI
+backend/app/scoring.py        deterministic Worth Score / Return Risk
+backend/app/providers/        Perfect Corp cloth-v4 + prepared fallback
+backend/data/                 closet, products, prepared assets
 ```
 
-- `GET /health` — service health and enabled provider modes
-- `GET /api/demo` — shopper, closet, candidates, demo copy
-- `POST /api/analyze` — deterministic analysis for a candidate
-- `POST /api/try-on` and `GET /api/try-on/{job_id}` — Perfect Corp or prepared demo
-- `POST /api/try-on/{job_id}/fallback` — explicit “Use prepared demo result”
-- `POST /api/scenarios` — optional Image Generator (disabled without credentials)
+- `PerfectCorpProvider` keeps `PERFECT_CORP_API_KEY` server-side, uploads images through the File API, and starts cloth-v4 with `garment_category=outer`.
+- If the live call fails or exceeds 45 seconds, the UI offers **Use prepared demo result** instead of silently swapping it in.
 
-Try-on providers share `VirtualTryOnProvider.create_try_on()` / `get_status()`.
+## Setup
 
-- `PerfectCorpProvider` keeps `PERFECT_CORP_API_KEY` server-side, uses timeouts, retries transient failures twice, and normalizes cloth-v4 responses. Official payload fields are documented in `backend/app/providers/perfect_corp.py`.
-- `DemoProvider` returns labeled pre-generated assets when `DEMO_MODE=true` or live credentials are missing.
-- Live calls that fail or exceed 20 seconds never silently substitute a demo image. The UI offers **Use prepared demo result**.
-- MCP is an optional adapter behind the same interfaces. The app does not describe MCP as active unless a real MCP tool call succeeds (`mcp_active` on `/health`).
+Python 3.12:
+
+```bash
+python3 -m pip install -r requirements.txt
+cp .env.example .env          # add PERFECT_CORP_API_KEY, DEMO_MODE=false
+streamlit run streamlit_app.py
+```
+
+Open the local URL Streamlit prints (usually http://localhost:8501).
+
+## Deploy for judges (Streamlit Community Cloud)
+
+1. Push this repo to GitHub (this branch or `main`).
+2. Go to [share.streamlit.io](https://share.streamlit.io) → **Create app**.
+3. Repository: `venvennnn/worthwearing`. Branch: `main`. Main file: `streamlit_app.py`.
+4. **Advanced settings → Python version: 3.12**.
+5. **App settings → Secrets** (same keys as `.streamlit/secrets.toml.example`):
+
+```toml
+DEMO_MODE = "false"
+PERFECT_CORP_API_KEY = "your-key"
+PERFECT_CORP_BASE_URL = "https://yce-api-01.makeupar.com"
+PERFECT_CORP_TRYON_PATH = "/s2s/v2.0/task/cloth-v4"
+PERFECT_CORP_STATUS_PATH = "/s2s/v2.0/task/cloth-v4/{task_id}"
+```
+
+6. Deploy. Share the `*.streamlit.app` URL with judges.
+
+Disconnect the Vercel project so it stops building the old Next.js app.
+
+Render also works: root of repo, `PYTHON_VERSION=3.12.11`, start command  
+`streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true`.
 
 ## Scoring
 
@@ -66,60 +92,18 @@ Cost per wear is an **Estimated CPW scenario**: `price / estimated_wears` over a
 
 Seed metadata is tuned so Jacket A lands about 75–90 (Skip It) against the existing leather jacket, and Jacket B lands about 15–35 (Worth It) with at least four compatible outfits.
 
-## Setup
-
-Requires Python 3.12 and Node 20+.
-
-```bash
-cp .env.example .env
-# backend
-cd backend
-python3 -m pip install -r requirements.txt
-python3 -m uvicorn app.main:app --reload --port 8000
-# frontend (separate terminal)
-cd frontend
-npm install
-printf 'NEXT_PUBLIC_API_URL=http://localhost:8000\n' > .env.local
-npm run dev
-```
-
-Open http://localhost:3000 then `/demo`.
-
-Live try-on is on when `DEMO_MODE=false` and `PERFECT_CORP_API_KEY` is set in the **server** `.env` (never in the browser or git). The adapter uploads the shopper and garment through Perfect Corp’s File API, then starts a cloth-v4 task. If the live call fails or exceeds 45 seconds, the UI offers **Use prepared demo result** instead of silently swapping it in.
-
-## Deploy (Render + Vercel)
-
-Render’s default Python is 3.14, which cannot install our pinned `pydantic` wheels. The backend must run **Python 3.12**.
-
-In the Render service → Environment, set:
-
-```
-PYTHON_VERSION=3.12.11
-DEMO_MODE=false
-PERFECT_CORP_API_KEY=<server secret>
-FRONTEND_ORIGIN=https://YOUR-VERCEL-APP.vercel.app
-```
-
-Root directory: `backend`. Build: `pip install -r requirements.txt`. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
-
-If GitHub access is denied, grant Render the repo in GitHub → Settings → Applications → Render, or make the repo public.
-
 ## Tests
 
 ```bash
 cd backend && python3 -m pytest
-cd frontend && npm test
-cd frontend && npx playwright install chromium && npm run test:e2e
 ```
 
 ## Two-minute presentation check
 
-1. Open `/demo`. Confirm Maya’s photo and the twelve-item closet.
-2. Select Jacket A (Noir Moto). Click **Try it with my wardrobe**. Watch the staged progress.
+1. Open the Streamlit app. Confirm Maya’s photo and the twelve-item closet.
+2. Select Jacket A (Noir Moto). Click **Try it with my wardrobe**.
 3. Confirm Skip It, high Return Risk, duplication against the vintage leather biker, and the try-on as the largest visual.
 4. Expand **Why this result?** and check that factor points sum to Return Risk.
-5. Select Jacket B (Harbor Field). Run again. Confirm Worth It, ≥4 outfits, before/after comparison, and office / weekend / rainy-commute thumbnails.
-6. If you simulate a live failure, **Use prepared demo result** appears and the badge reads Prepared demo — never a silent swap.
+5. Select Jacket B (Harbor Field). Run again. Confirm Worth It, ≥4 outfits, before-and-after, and office / weekend / rainy-commute images.
+6. If live try-on fails, **Use prepared demo result** is explicit — never a silent swap.
 7. Close on: we don’t help shoppers buy more. We help them keep what they buy.
-
-Preflight both jackets before recording.
