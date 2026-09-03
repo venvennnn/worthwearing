@@ -28,7 +28,7 @@ from app.providers.demo import DemoProvider
 from app.providers.perfect_corp import PerfectCorpProvider
 from app.providers.scenarios import OptionalMcpAdapter, ScenarioImageProvider
 from app.scoring import ScoreInputs, analyze
-from app.store import get_candidate, load_demo
+from app.store import closet_fingerprint, get_candidate, load_demo
 
 configure_logging()
 settings = get_settings()
@@ -121,7 +121,12 @@ async def analyze_candidate(body: AnalyzeRequest, request: Request) -> AnalysisR
     occasions = body.target_occasions or demo.config.target_occasions
     horizon = body.wear_horizon_months or demo.config.wear_horizon_months
     cache_key = analysis_cache_key(
-        demo.shopper.id, candidate.id, climate, occasions, horizon
+        demo.shopper.id,
+        candidate.id,
+        climate,
+        occasions,
+        horizon,
+        closet_fingerprint(demo.closet),
     )
     cached = get_cached(cache_key)
     if cached:

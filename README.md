@@ -32,8 +32,9 @@ backend/app/providers/        Perfect Corp cloth-v4 + prepared fallback
 backend/data/                 closet, products, prepared assets
 ```
 
-- `PerfectCorpProvider` keeps `PERFECT_CORP_API_KEY` server-side, uploads images through the File API, and starts cloth-v4 with `garment_category=outer`.
+- `PerfectCorpProvider` keeps `PERFECT_CORP_API_KEY` server-side, uploads images through the File API, and starts cloth-v4 with `garment_category` mapped from the garment (`outer` for jackets, `upper` for shirts, `lower` for bottoms).
 - If the live call fails or exceeds 45 seconds, the UI offers **Use prepared demo result** instead of silently swapping it in.
+- **Add to your wardrobe** and **Try a shirt or other garment** accept a photo plus tags. Uploads stay in the Streamlit session (not a shared catalog) and are included in scoring.
 
 ## Setup
 
@@ -106,4 +107,6 @@ cd backend && python3 -m pytest
 4. Expand **Why this result?** and check that factor points sum to Return Risk.
 5. Select Jacket B (Harbor Field). Run again. Confirm Worth It, ≥4 outfits, before-and-after, and office / weekend / rainy-commute images.
 6. If live try-on fails, **Use prepared demo result** is explicit — never a silent swap.
-7. Close on: we don’t help shoppers buy more. We help them keep what they buy.
+7. Choose **Add to wardrobe**, upload a photo, and confirm it appears in Maya’s closet labeled *yours*. Re-run Jacket A or B so scoring includes the extra piece.
+8. Choose **Try a shirt**, upload a shirt, and confirm a Worth It / Think Again / Skip It result against the closet. A second white oxford should show high duplication.
+9. Close on: we don’t help shoppers buy more. We help them keep what they buy.
