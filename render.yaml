@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: worthwearing-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.11
+      - key: DEMO_MODE
+        value: "false"
+      - key: PERFECT_CORP_API_KEY
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: PERFECT_CORP_BASE_URL
+        value: https://yce-api-01.makeupar.com
+      - key: PERFECT_CORP_TRYON_PATH
+        value: /s2s/v2.0/task/cloth-v4
+      - key: PERFECT_CORP_STATUS_PATH
+        value: /s2s/v2.0/task/cloth-v4/{task_id}

@@ -47,13 +47,15 @@ def test_normalize_create_task_id():
 
 
 def test_payload_uses_official_fields():
-    from app.models import TryOnRequest
-
     provider = PerfectCorpProvider()
-    payload = provider._build_try_on_payload(
-        TryOnRequest(candidate_id="jacket-a", shopper_asset_id="shopper-maya")
-    )
-    assert "src_file_url" in payload
-    assert "ref_file_url" in payload
-    assert "garment_category" in payload
+    payload = provider._task_payload("src-1", "ref-1")
+    assert payload["src_file_id"] == "src-1"
+    assert payload["ref_file_id"] == "ref-1"
+    assert payload["garment_category"] == "outer"
     assert "Authorization" not in payload
+
+
+def test_asset_path_resolves_demo_files():
+    provider = PerfectCorpProvider()
+    path = provider._asset_path("/assets/shopper-portrait.png")
+    assert path.is_file()

@@ -43,7 +43,7 @@ class Settings(BaseSettings):
         default="/s2s/v2.0/task/image-to-image/youcam",
         alias="PERFECT_CORP_IMAGE_GENERATOR_PATH",
     )
-    request_timeout_seconds: float = 20.0
+    request_timeout_seconds: float = 45.0
     max_retries: int = 2
 
     @property

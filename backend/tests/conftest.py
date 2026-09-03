@@ -1,3 +1,9 @@
+import os
+
+# Unit tests must not call the live Perfect Corp API or consume units.
+os.environ["DEMO_MODE"] = "true"
+os.environ["PERFECT_CORP_API_KEY"] = ""
+
 from app.store import load_demo
 
 
