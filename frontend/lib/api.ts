@@ -53,7 +53,7 @@ export function getTryOn(jobId: string) {
   return request<TryOnJob>(`/api/try-on/${jobId}`);
 }
 
-export function usePreparedFallback(jobId: string) {
+export function requestPreparedFallback(jobId: string) {
   return request<TryOnJob>(`/api/try-on/${jobId}/fallback`, { method: "POST" });
 }
 
