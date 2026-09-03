@@ -16,6 +16,7 @@ def analysis_cache_key(
     climate_tags: list[str],
     target_occasions: list[str],
     horizon: int,
+    closet_fingerprint: str = "",
 ) -> str:
     payload = "|".join(
         [
@@ -24,6 +25,7 @@ def analysis_cache_key(
             ",".join(sorted(climate_tags)),
             ",".join(sorted(target_occasions)),
             str(horizon),
+            closet_fingerprint,
         ]
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

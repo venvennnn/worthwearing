@@ -77,7 +77,7 @@ class DemoConfig(BaseModel):
 
 class CandidateProduct(Garment):
     short_label: str
-    demo_role: Literal["duplicative", "versatile"]
+    demo_role: Literal["duplicative", "versatile", "custom"]
     prepared_try_on_url: str
     prepared_try_on_alt: str
     scenario_assets: list["ScenarioAsset"] = Field(default_factory=list)

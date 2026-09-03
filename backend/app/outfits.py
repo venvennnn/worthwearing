@@ -100,6 +100,25 @@ class OutfitEngine:
             return True
         return False
 
+    def pair_status(self, left: Garment, right: Garment) -> tuple[bool, str, str]:
+        if not self.colors_compatible(left, right):
+            return False, "color", f"{left.name} clashes with {right.name}."
+        if not self.styles_compatible(left, right):
+            return False, "style", f"{left.name} style does not sit with {right.name}."
+        if not self.seasons_compatible(left, right):
+            return False, "season", f"{left.name} and {right.name} do not share a season."
+        if not self.occasions_overlap(left, right):
+            return False, "occasion", f"{left.name} and {right.name} share no occasion."
+        return True, "", ""
+
+    def _piece(self, item: Garment) -> OutfitPiece:
+        return OutfitPiece(
+            item_id=item.id,
+            name=item.name,
+            image_url=item.image_url,
+            layer=item.layer,
+        )
+
     def _reject(
         self,
         items: list[Garment],
@@ -126,6 +145,207 @@ class OutfitEngine:
     def build_outfits(
         self, candidate: Garment, closet: list[Garment]
     ) -> tuple[list[CompatibleOutfit], list[RejectedCombination]]:
+        if candidate.layer == "base":
+            return self._outfits_for_top(candidate, closet)
+        if candidate.layer == "bottom":
+            return self._outfits_for_bottom(candidate, closet)
+        if candidate.layer == "shoes":
+            return self._outfits_for_shoes(candidate, closet)
+        return self._outfits_for_outer(candidate, closet)
+
+    def _choose_shoe(
+        self,
+        candidate: Garment,
+        bottom: Garment,
+        shoes: list[Garment],
+        shared: set[str],
+    ) -> Garment | None:
+        return next(
+            (
+                s
+                for s in shoes
+                if self.pair_status(candidate, s)[0]
+                and self.pair_status(bottom, s)[0]
+                and self.occasions_overlap(s, candidate) & shared
+            ),
+            None,
+        )
+
+    def _outfits_for_top(
+        self, candidate: Garment, closet: list[Garment]
+    ) -> tuple[list[CompatibleOutfit], list[RejectedCombination]]:
+        mids = [item for item in closet if item.layer == "mid"]
+        bottoms = [item for item in closet if item.layer == "bottom"]
+        shoes = [item for item in closet if item.layer == "shoes"]
+        outers = [item for item in closet if item.layer == "outer"]
+        rejected: list[RejectedCombination] = []
+        seen_reject: set[tuple[str, ...]] = set()
+        outfits: list[CompatibleOutfit] = []
+
+        for bottom in bottoms:
+            ok, rule, reason = self.pair_status(candidate, bottom)
+            if not ok:
+                self._reject([candidate, bottom], rule, reason, rejected, seen_reject)
+                continue
+            shared = self.occasions_overlap(candidate, bottom)
+            if not shared:
+                self._reject(
+                    [candidate, bottom],
+                    "occasion",
+                    f"{candidate.name} and {bottom.name} share no occasion.",
+                    rejected,
+                    seen_reject,
+                )
+                continue
+            occasion = sorted(shared)[0]
+            pieces = [self._piece(candidate), self._piece(bottom)]
+            shoe = self._choose_shoe(candidate, bottom, shoes, shared)
+            if shoe:
+                pieces.append(self._piece(shoe))
+            outfits.append(
+                CompatibleOutfit(
+                    id=f"{candidate.id}-{bottom.id}",
+                    occasion=occasion,
+                    pieces=pieces,
+                    rationale=(
+                        f"{bottom.name} shares color, season, and {occasion} "
+                        f"with {candidate.name}."
+                    ),
+                )
+            )
+            for outer in outers:
+                ok_o, _, _ = self.pair_status(outer, candidate)
+                ok_ob, _, _ = self.pair_status(outer, bottom)
+                shared_o = shared & self.occasions_overlap(outer, candidate)
+                if not (ok_o and ok_ob and shared_o):
+                    continue
+                outer_pieces = [self._piece(outer), self._piece(candidate), self._piece(bottom)]
+                if shoe:
+                    outer_pieces.append(self._piece(shoe))
+                outfits.append(
+                    CompatibleOutfit(
+                        id=f"{candidate.id}-{outer.id}-{bottom.id}",
+                        occasion=sorted(shared_o)[0],
+                        pieces=outer_pieces,
+                        rationale=(
+                            f"{outer.name} layers over {candidate.name} with "
+                            f"{bottom.name}."
+                        ),
+                    )
+                )
+            for mid in mids:
+                if not self.layers_stack(mid, candidate):
+                    continue
+                ok_m, _, _ = self.pair_status(mid, candidate)
+                ok_mb, _, _ = self.pair_status(mid, bottom)
+                shared_m = shared & self.occasions_overlap(mid, candidate)
+                if not (ok_m and ok_mb and shared_m):
+                    continue
+                mid_pieces = [self._piece(mid), self._piece(candidate), self._piece(bottom)]
+                if shoe:
+                    mid_pieces.append(self._piece(shoe))
+                outfits.append(
+                    CompatibleOutfit(
+                        id=f"{candidate.id}-{mid.id}-{bottom.id}",
+                        occasion=sorted(shared_m)[0],
+                        pieces=mid_pieces,
+                        rationale=(
+                            f"{mid.name} layers over {candidate.name} with "
+                            f"{bottom.name}."
+                        ),
+                    )
+                )
+
+        outfits.sort(key=lambda o: (o.occasion, o.id))
+        return outfits, rejected
+
+    def _outfits_for_bottom(
+        self, candidate: Garment, closet: list[Garment]
+    ) -> tuple[list[CompatibleOutfit], list[RejectedCombination]]:
+        bases = [item for item in closet if item.layer == "base"]
+        shoes = [item for item in closet if item.layer == "shoes"]
+        rejected: list[RejectedCombination] = []
+        seen_reject: set[tuple[str, ...]] = set()
+        outfits: list[CompatibleOutfit] = []
+
+        for base in bases:
+            ok, rule, reason = self.pair_status(candidate, base)
+            if not ok:
+                self._reject([candidate, base], rule, reason, rejected, seen_reject)
+                continue
+            shared = self.occasions_overlap(candidate, base)
+            if not shared:
+                self._reject(
+                    [candidate, base],
+                    "occasion",
+                    f"{candidate.name} and {base.name} share no occasion.",
+                    rejected,
+                    seen_reject,
+                )
+                continue
+            pieces = [self._piece(base), self._piece(candidate)]
+            shoe = self._choose_shoe(base, candidate, shoes, shared)
+            if shoe:
+                pieces.append(self._piece(shoe))
+            outfits.append(
+                CompatibleOutfit(
+                    id=f"{candidate.id}-{base.id}",
+                    occasion=sorted(shared)[0],
+                    pieces=pieces,
+                    rationale=(
+                        f"{base.name} shares color, season, and {sorted(shared)[0]} "
+                        f"with {candidate.name}."
+                    ),
+                )
+            )
+
+        outfits.sort(key=lambda o: (o.occasion, o.id))
+        return outfits, rejected
+
+    def _outfits_for_shoes(
+        self, candidate: Garment, closet: list[Garment]
+    ) -> tuple[list[CompatibleOutfit], list[RejectedCombination]]:
+        bases = [item for item in closet if item.layer == "base"]
+        bottoms = [item for item in closet if item.layer == "bottom"]
+        rejected: list[RejectedCombination] = []
+        seen_reject: set[tuple[str, ...]] = set()
+        outfits: list[CompatibleOutfit] = []
+
+        for bottom in bottoms:
+            ok, rule, reason = self.pair_status(candidate, bottom)
+            if not ok:
+                self._reject([candidate, bottom], rule, reason, rejected, seen_reject)
+                continue
+            for base in bases:
+                ok_b, _, _ = self.pair_status(base, bottom)
+                ok_s, _, _ = self.pair_status(candidate, base)
+                shared = (
+                    self.occasions_overlap(candidate, bottom)
+                    & self.occasions_overlap(base, bottom)
+                )
+                if not (ok_b and ok_s and shared):
+                    continue
+                outfits.append(
+                    CompatibleOutfit(
+                        id=f"{candidate.id}-{base.id}-{bottom.id}",
+                        occasion=sorted(shared)[0],
+                        pieces=[
+                            self._piece(base),
+                            self._piece(bottom),
+                            self._piece(candidate),
+                        ],
+                        rationale=(
+                            f"{base.name} and {bottom.name} work with {candidate.name}."
+                        ),
+                    )
+                )
+
+        outfits.sort(key=lambda o: (o.occasion, o.id))
+        return outfits, rejected
+
+    def _outfits_for_outer(
+        self, candidate: Garment, closet: list[Garment]
+    ) -> tuple[list[CompatibleOutfit], list[RejectedCombination]]:
         bases = [item for item in closet if item.layer == "base"]
         mids = [item for item in closet if item.layer == "mid"]
         bottoms = [item for item in closet if item.layer == "bottom"]
@@ -134,19 +354,8 @@ class OutfitEngine:
         seen_reject: set[tuple[str, ...]] = set()
         outfits: list[CompatibleOutfit] = []
 
-        def pair_ok(left: Garment, right: Garment) -> tuple[bool, str, str]:
-            if not self.colors_compatible(left, right):
-                return False, "color", f"{left.name} clashes with {right.name}."
-            if not self.styles_compatible(left, right):
-                return False, "style", f"{left.name} style does not sit with {right.name}."
-            if not self.seasons_compatible(left, right):
-                return False, "season", f"{left.name} and {right.name} do not share a season."
-            if not self.occasions_overlap(left, right):
-                return False, "occasion", f"{left.name} and {right.name} share no occasion."
-            return True, "", ""
-
         for base in bases:
-            ok, rule, reason = pair_ok(candidate, base)
+            ok, rule, reason = self.pair_status(candidate, base)
             if not ok:
                 self._reject([candidate, base], rule, reason, rejected, seen_reject)
                 continue
@@ -160,13 +369,13 @@ class OutfitEngine:
                 )
                 continue
             for bottom in bottoms:
-                ok_b, rule_b, reason_b = pair_ok(candidate, bottom)
+                ok_b, rule_b, reason_b = self.pair_status(candidate, bottom)
                 if not ok_b:
                     self._reject(
                         [candidate, bottom], rule_b, reason_b, rejected, seen_reject
                     )
                     continue
-                ok_bb, rule_bb, reason_bb = pair_ok(base, bottom)
+                ok_bb, rule_bb, reason_bb = self.pair_status(base, bottom)
                 if not ok_bb:
                     self._reject(
                         [base, bottom], rule_bb, reason_bb, rejected, seen_reject
@@ -187,44 +396,13 @@ class OutfitEngine:
                     continue
                 occasion = sorted(shared)[0]
                 pieces = [
-                    OutfitPiece(
-                        item_id=candidate.id,
-                        name=candidate.name,
-                        image_url=candidate.image_url,
-                        layer=candidate.layer,
-                    ),
-                    OutfitPiece(
-                        item_id=base.id,
-                        name=base.name,
-                        image_url=base.image_url,
-                        layer=base.layer,
-                    ),
-                    OutfitPiece(
-                        item_id=bottom.id,
-                        name=bottom.name,
-                        image_url=bottom.image_url,
-                        layer=bottom.layer,
-                    ),
+                    self._piece(candidate),
+                    self._piece(base),
+                    self._piece(bottom),
                 ]
-                shoe = next(
-                    (
-                        s
-                        for s in shoes
-                        if pair_ok(candidate, s)[0]
-                        and pair_ok(bottom, s)[0]
-                        and self.occasions_overlap(s, candidate) & shared
-                    ),
-                    None,
-                )
+                shoe = self._choose_shoe(candidate, bottom, shoes, shared)
                 if shoe:
-                    pieces.append(
-                        OutfitPiece(
-                            item_id=shoe.id,
-                            name=shoe.name,
-                            image_url=shoe.image_url,
-                            layer=shoe.layer,
-                        )
-                    )
+                    pieces.append(self._piece(shoe))
                 outfits.append(
                     CompatibleOutfit(
                         id=f"{candidate.id}-{base.id}-{bottom.id}",
@@ -237,25 +415,24 @@ class OutfitEngine:
                     )
                 )
 
-        # Optional mid-layer outfits that do not duplicate a counted pair.
         existing_pairs = {(o.pieces[1].item_id, o.pieces[2].item_id) for o in outfits}
         for mid in mids:
-            ok, rule, reason = pair_ok(candidate, mid)
+            ok, rule, reason = self.pair_status(candidate, mid)
             if not ok:
                 self._reject([candidate, mid], rule, reason, rejected, seen_reject)
                 continue
             for base in bases:
                 if not self.layers_stack(mid, base):
                     continue
-                ok_m, _, _ = pair_ok(mid, base)
+                ok_m, _, _ = self.pair_status(mid, base)
                 if not ok_m:
                     continue
                 for bottom in bottoms:
                     pair = (base.id, bottom.id)
                     if pair in existing_pairs:
                         continue
-                    ok_b, _, _ = pair_ok(candidate, bottom)
-                    ok_mb, _, _ = pair_ok(mid, bottom)
+                    ok_b, _, _ = self.pair_status(candidate, bottom)
+                    ok_mb, _, _ = self.pair_status(mid, bottom)
                     if not (ok_b and ok_mb):
                         continue
                     shared = (
@@ -270,30 +447,10 @@ class OutfitEngine:
                             id=f"{candidate.id}-{mid.id}-{base.id}-{bottom.id}",
                             occasion=sorted(shared)[0],
                             pieces=[
-                                OutfitPiece(
-                                    item_id=candidate.id,
-                                    name=candidate.name,
-                                    image_url=candidate.image_url,
-                                    layer=candidate.layer,
-                                ),
-                                OutfitPiece(
-                                    item_id=mid.id,
-                                    name=mid.name,
-                                    image_url=mid.image_url,
-                                    layer=mid.layer,
-                                ),
-                                OutfitPiece(
-                                    item_id=base.id,
-                                    name=base.name,
-                                    image_url=base.image_url,
-                                    layer=base.layer,
-                                ),
-                                OutfitPiece(
-                                    item_id=bottom.id,
-                                    name=bottom.name,
-                                    image_url=bottom.image_url,
-                                    layer=bottom.layer,
-                                ),
+                                self._piece(candidate),
+                                self._piece(mid),
+                                self._piece(base),
+                                self._piece(bottom),
                             ],
                             rationale=(
                                 f"{mid.name} layers over {base.name} for a "

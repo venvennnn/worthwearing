@@ -12,7 +12,7 @@ Official contract (YouCam Online Editor):
      Official JSON fields (insert here if the console contract changes):
        src_file_id or src_file_url
        ref_file_id or ref_file_url
-       garment_category   upper | lower | full_body
+       garment_category   outer | upper | lower | full_body
 
   3) Poll:
      GET {BASE}{PERFECT_CORP_STATUS_PATH}  with {task_id}
@@ -32,11 +32,12 @@ from threading import Lock
 
 import httpx
 
-from app.config import DATA_DIR, Settings, get_settings
+from app.catalog import garment_category_for
+from app.config import Settings, get_settings
 from app.logging_utils import log_event
 from app.models import ProviderMode, TryOnJob, TryOnRequest, TryOnStatus
 from app.providers.base import VirtualTryOnProvider
-from app.store import get_candidate, load_demo
+from app.store import get_candidate, load_demo, resolve_asset_path
 
 _jobs: dict[str, TryOnJob] = {}
 _remote_ids: dict[str, str] = {}
@@ -62,23 +63,24 @@ class PerfectCorpProvider(VirtualTryOnProvider):
         }
 
     def _asset_path(self, image_url: str) -> Path:
-        name = image_url.rsplit("/", 1)[-1]
-        candidates = [
-            DATA_DIR / "assets" / name,
-            DATA_DIR.parent.parent / "frontend" / "public" / "assets" / name,
-        ]
-        for path in candidates:
-            if path.is_file():
-                return path
-        raise FileNotFoundError(name)
+        path = resolve_asset_path(image_url)
+        if path is None:
+            name = image_url.rsplit("/", 1)[-1]
+            raise FileNotFoundError(name)
+        return path
 
-    def _task_payload(self, src_file_id: str, ref_file_id: str) -> dict[str, str]:
+    def _task_payload(
+        self,
+        src_file_id: str,
+        ref_file_id: str,
+        garment_category: str = "outer",
+    ) -> dict[str, str]:
         # Official cloth-v4 fields. Use src_file_url / ref_file_url only when
         # the image is already hosted on a public URL Perfect Corp can fetch.
         return {
             "src_file_id": src_file_id,
             "ref_file_id": ref_file_id,
-            "garment_category": "outer",
+            "garment_category": garment_category,
         }
 
     def _normalize_create(self, body: dict) -> str:
@@ -229,7 +231,9 @@ class PerfectCorpProvider(VirtualTryOnProvider):
         candidate = get_candidate(request.candidate_id)
         src_id = await self._upload_asset(client, demo.shopper.photo_url)
         ref_id = await self._upload_asset(client, candidate.image_url)
-        return self._task_payload(src_id, ref_id)
+        return self._task_payload(
+            src_id, ref_id, garment_category_for(candidate)
+        )
 
     async def create_try_on(self, request: TryOnRequest, request_id: str) -> TryOnJob:
         started = time.perf_counter()
