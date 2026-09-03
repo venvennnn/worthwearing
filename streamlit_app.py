@@ -353,7 +353,6 @@ with visual:
                     )
                     st.session_state.extra_closet.append(item.model_dump(mode="json"))
                     clear_analyses()
-                    st.session_state.main_view = "Add to wardrobe"
                     st.session_state.form_notice = f"Added {item.name} to the wardrobe."
                     st.rerun()
                 except Exception as exc:
@@ -406,7 +405,6 @@ with visual:
                     )
                     st.session_state.extra_candidates.append(item.model_dump(mode="json"))
                     select_garment(item.id)
-                    st.session_state.main_view = "Try a shirt"
                     run_pipeline(item.id)
                     st.session_state.form_notice = f"Scored {item.name} against the wardrobe."
                     st.rerun()
