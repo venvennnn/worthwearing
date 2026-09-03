@@ -164,37 +164,87 @@ def run_pipeline(candidate_id: str) -> None:
 
 
 def persist_upload(upload, prefix: str) -> str:
+    if isinstance(upload, dict):
+        return save_upload(upload["data"], upload["name"], prefix)
     return save_upload(upload.getvalue(), upload.name, prefix)
 
 
-def garment_form_fields(key_prefix: str) -> tuple:
-    photo = st.file_uploader(
+def _stash_photo(prefix: str) -> None:
+    file = st.session_state.get(f"{prefix}-photo")
+    if file is not None:
+        st.session_state[f"{prefix}-stash"] = {
+            "name": file.name,
+            "data": file.getvalue(),
+        }
+
+
+def _ensure_garment_defaults(prefix: str) -> None:
+    defaults = {
+        f"{prefix}-kind": "shirt",
+        f"{prefix}-colors": ["white"],
+        f"{prefix}-styles": ["classic"],
+        f"{prefix}-seasons": ["fall", "winter", "spring"],
+        f"{prefix}-occasions": ["work", "weekend"],
+        f"{prefix}-price": 0.0,
+    }
+    for key, value in defaults.items():
+        current = st.session_state.get(key)
+        if current is None or (isinstance(current, list) and not current):
+            st.session_state[key] = value
+
+
+def garment_editor(prefix: str, submit_label: str) -> dict | None:
+    """Photo lives outside a form so Streamlit does not drop the upload on submit."""
+    _ensure_garment_defaults(prefix)
+    st.file_uploader(
         "Photo of the garment",
         type=["jpg", "jpeg", "png", "webp"],
-        key=f"{key_prefix}-photo",
+        key=f"{prefix}-photo",
+        on_change=_stash_photo,
+        args=(prefix,),
     )
-    name = st.text_input("Name", placeholder="White Oxford Shirt", key=f"{key_prefix}-name")
-    kind = st.selectbox("Type", KIND_OPTIONS, key=f"{key_prefix}-kind")
-    colors = st.multiselect("Colors", COLOR_OPTIONS, default=["white"], key=f"{key_prefix}-colors")
-    styles = st.multiselect(
-        "Style", STYLE_OPTIONS, default=["classic"], key=f"{key_prefix}-styles"
-    )
-    seasons = st.multiselect(
-        "Seasons",
-        SEASON_OPTIONS,
-        default=["fall", "winter", "spring"],
-        key=f"{key_prefix}-seasons",
-    )
-    occasions = st.multiselect(
-        "Occasions",
-        OCCASION_OPTIONS,
-        default=["work", "weekend"],
-        key=f"{key_prefix}-occasions",
-    )
+    _stash_photo(prefix)
+    name = st.text_input("Name", placeholder="White Oxford Shirt", key=f"{prefix}-name")
+    kind = st.selectbox("Type", KIND_OPTIONS, key=f"{prefix}-kind")
+    colors = st.multiselect("Colors", COLOR_OPTIONS, key=f"{prefix}-colors")
+    styles = st.multiselect("Style", STYLE_OPTIONS, key=f"{prefix}-styles")
+    seasons = st.multiselect("Seasons", SEASON_OPTIONS, key=f"{prefix}-seasons")
+    occasions = st.multiselect("Occasions", OCCASION_OPTIONS, key=f"{prefix}-occasions")
     price = st.number_input(
-        "Price (optional)", min_value=0.0, value=0.0, step=1.0, key=f"{key_prefix}-price"
+        "Price (optional)", min_value=0.0, step=1.0, key=f"{prefix}-price"
     )
-    return photo, name, kind, colors, styles, seasons, occasions, price
+    submitted = st.button(
+        submit_label, type="primary", use_container_width=True, key=f"{prefix}-submit"
+    )
+    if not submitted:
+        return None
+    photo = st.session_state.get(f"{prefix}-photo") or st.session_state.get(f"{prefix}-stash")
+    missing = []
+    if not photo:
+        missing.append("a photo")
+    if not str(name).strip():
+        missing.append("a name")
+    if not colors:
+        missing.append("a color")
+    if not styles:
+        missing.append("a style")
+    if not seasons:
+        missing.append("a season")
+    if not occasions:
+        missing.append("an occasion")
+    if missing:
+        st.error("Need " + ", ".join(missing) + ".")
+        return None
+    return {
+        "photo": photo,
+        "name": str(name).strip(),
+        "kind": kind,
+        "colors": colors,
+        "styles": styles,
+        "seasons": seasons,
+        "occasions": occasions,
+        "price": price,
+    }
 
 
 def render_picker(items: list[CandidateProduct], current_id: str) -> None:
@@ -328,35 +378,29 @@ with visual:
             "Upload a photo of something you already own. It joins Maya’s closet for this "
             "browser session only and is included the next time you score a garment."
         )
-        with st.form("add-closet"):
-            photo, name, kind, colors, styles, seasons, occasions, price = garment_form_fields(
-                "closet"
-            )
-            added = st.form_submit_button("Add to wardrobe", use_container_width=True)
-        if added:
-            if not photo or not name.strip() or not colors or not styles or not seasons or not occasions:
-                st.error("Need a photo, a name, and at least one color, style, season, and occasion.")
-            else:
-                try:
-                    item_id = f"user-closet-{uuid.uuid4().hex[:10]}"
-                    filename = persist_upload(photo, item_id)
-                    item = make_custom_closet_item(
-                        item_id=item_id,
-                        name=name,
-                        kind=kind,
-                        colors=colors,
-                        styles=styles,
-                        seasons=seasons,
-                        occasions=occasions,
-                        price=price,
-                        filename=filename,
-                    )
-                    st.session_state.extra_closet.append(item.model_dump(mode="json"))
-                    clear_analyses()
-                    st.session_state.form_notice = f"Added {item.name} to the wardrobe."
-                    st.rerun()
-                except Exception as exc:
-                    st.error(str(exc))
+        payload = garment_editor("closet", "Add to wardrobe")
+        if payload:
+            try:
+                item_id = f"user-closet-{uuid.uuid4().hex[:10]}"
+                filename = persist_upload(payload["photo"], item_id)
+                item = make_custom_closet_item(
+                    item_id=item_id,
+                    name=payload["name"],
+                    kind=payload["kind"],
+                    colors=payload["colors"],
+                    styles=payload["styles"],
+                    seasons=payload["seasons"],
+                    occasions=payload["occasions"],
+                    price=payload["price"],
+                    filename=filename,
+                )
+                st.session_state.extra_closet.append(item.model_dump(mode="json"))
+                clear_analyses()
+                st.session_state.pop("closet-stash", None)
+                st.session_state.form_notice = f"Added {item.name} to the wardrobe."
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
         if extra_closet:
             st.caption("Items you added")
             for item in extra_closet:
@@ -380,36 +424,30 @@ with visual:
             "Upload any shirt, sweater, jacket, or bottom. WorthWearing scores it against "
             "the current wardrobe and runs try-on when the live API is on."
         )
-        with st.form("try-garment"):
-            photo, name, kind, colors, styles, seasons, occasions, price = garment_form_fields(
-                "try"
-            )
-            tried = st.form_submit_button("Analyze this garment", use_container_width=True)
-        if tried:
-            if not photo or not name.strip() or not colors or not styles or not seasons or not occasions:
-                st.error("Need a photo, a name, and at least one color, style, season, and occasion.")
-            else:
-                try:
-                    item_id = f"user-item-{uuid.uuid4().hex[:10]}"
-                    filename = persist_upload(photo, item_id)
-                    item = make_custom_candidate(
-                        item_id=item_id,
-                        name=name,
-                        kind=kind,
-                        colors=colors,
-                        styles=styles,
-                        seasons=seasons,
-                        occasions=occasions,
-                        price=price,
-                        filename=filename,
-                    )
-                    st.session_state.extra_candidates.append(item.model_dump(mode="json"))
-                    select_garment(item.id)
-                    run_pipeline(item.id)
-                    st.session_state.form_notice = f"Scored {item.name} against the wardrobe."
-                    st.rerun()
-                except Exception as exc:
-                    st.error(str(exc))
+        payload = garment_editor("try", "Analyze this garment")
+        if payload:
+            try:
+                item_id = f"user-item-{uuid.uuid4().hex[:10]}"
+                filename = persist_upload(payload["photo"], item_id)
+                item = make_custom_candidate(
+                    item_id=item_id,
+                    name=payload["name"],
+                    kind=payload["kind"],
+                    colors=payload["colors"],
+                    styles=payload["styles"],
+                    seasons=payload["seasons"],
+                    occasions=payload["occasions"],
+                    price=payload["price"],
+                    filename=filename,
+                )
+                st.session_state.extra_candidates.append(item.model_dump(mode="json"))
+                select_garment(item.id)
+                run_pipeline(item.id)
+                st.session_state.pop("try-stash", None)
+                st.session_state.form_notice = f"Scored {item.name} against the wardrobe."
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
         if extra_candidates:
             st.caption("Garments you uploaded to try")
             for item in extra_candidates:
