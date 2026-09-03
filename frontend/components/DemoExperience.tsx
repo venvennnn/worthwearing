@@ -17,7 +17,7 @@ import {
   getHealth,
   getTryOn,
   startTryOn,
-  usePreparedFallback,
+  requestPreparedFallback,
 } from "@/lib/api";
 import { assetSrc } from "@/lib/copy";
 import type {
@@ -135,7 +135,7 @@ export function DemoExperience({ demo }: Props) {
     const currentJob = jobs[candidate.id];
     try {
       if (currentJob?.job_id && !currentJob.job_id.startsWith("failed-")) {
-        const fallback = await usePreparedFallback(currentJob.job_id);
+        const fallback = await requestPreparedFallback(currentJob.job_id);
         setJobs((current) => ({ ...current, [candidate.id]: fallback }));
         setPrepared((current) => ({ ...current, [candidate.id]: true }));
         setTimedOut(false);
